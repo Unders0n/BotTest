@@ -25,6 +25,22 @@ namespace MarketRetailBot.Dialogs
         public virtual async Task MessageReceivedAsync(IDialogContext context, IAwaitable<IMessageActivity> argument)
         {
             var txt = await argument;
+            /*          if (txt.Text == "/availabilityBySku")
+                      {
+
+                      }*/
+
+            if (txt.Text.Contains(" /searchBySku"))
+            {
+                var sku = txt.Text.Substring((" /searchBySku").Length);
+
+
+
+                /*  PromptDialog.Text(context, PromptForSearchPhrase,
+                      "Please type title of shoe you would like to search for.", "Didn't get that, try again");*/
+                return;
+            }
+
             //start of converstaion or explicit call
             if ((count == 1) || (txt.Text == "/start"))
             {
@@ -32,9 +48,10 @@ namespace MarketRetailBot.Dialogs
                     "Please type title of shoe you would like to search for.", "Didn't get that, try again");
                 return;
             }
+           
 
-            var message = await argument;
-            if (message.Text == "/reset")
+            //    var message = await argument;
+            if (txt.Text == "/reset")
                 PromptDialog.Confirm(
                     context,
                     AfterResetAsync,
@@ -60,25 +77,39 @@ namespace MarketRetailBot.Dialogs
                 var resStr = client.Execute(request).Content;
 
                 var products = DeserializeAndUnwrap<List<Product>>(resStr, "Data");
+                if (products == null)
+                {
+                    await context.PostAsync($"Nothing found.");
+                    return;
+                }
 
 
                 await context.PostAsync($"We've found {products.Count} results for \"{searchString}\"");
 
                 //Filling up thumbnail cards for representation
                 //buttons not working for now
-                //     var buttons = new  List<CardAction>() { new CardAction() { Title = "Buy"} };
+                
                 //trim
                 if (products.Count > 25) products.RemoveRange(25, products.Count - 25);
 
                 var cards = new List<HeroCard>();
                 products.ForEach(product =>
                 {
+                    CardAction plButton = new CardAction()
+                    {
+                        Value = string.Format(" /searchBySku {0}", product.Sku),
+                        Type = "imBack",
+                        Title = "Show availability"
+                    };
+                    var buttons = new List<CardAction>() { plButton };
+
                     cards.Add(new HeroCard
                     {
                         Title = product.Title,
-                        //  Buttons = buttons,
+                          Buttons = buttons,
                         Images = new List<CardImage> {new CardImage(product.MainImageUrl)},
-                        Subtitle = product.ColorWay
+                        Subtitle = product.ColorWay,
+                      //  Tap = new CardAction() { }
                     });
                 });
                 message.AttachmentLayout = AttachmentLayoutTypes.Carousel;

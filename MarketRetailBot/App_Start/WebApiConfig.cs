@@ -2,8 +2,10 @@
 using Newtonsoft.Json.Serialization;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Web.Http;
+using System.Web.Http.ExceptionHandling;
 
 namespace MarketRetailBot
 {
@@ -11,6 +13,7 @@ namespace MarketRetailBot
     {
         public static void Register(HttpConfiguration config)
         {
+            config.Services.Add(typeof(IExceptionLogger), new TraceExceptionLogger());
             // Json settings
             config.Formatters.JsonFormatter.SerializerSettings.NullValueHandling = NullValueHandling.Ignore;
             config.Formatters.JsonFormatter.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
@@ -33,5 +36,12 @@ namespace MarketRetailBot
                 defaults: new { id = RouteParameter.Optional }
             );
         }
+    }
+}
+public class TraceExceptionLogger : ExceptionLogger
+{
+    public override void Log(ExceptionLoggerContext context)
+    {
+        Trace.TraceError(context.ExceptionContext.Exception.ToString());
     }
 }
