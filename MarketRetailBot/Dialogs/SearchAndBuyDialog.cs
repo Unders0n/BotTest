@@ -1,20 +1,26 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
+using MarketRetailBot.ApiHelpers;
+using MarketRetailBot.JsonHelpers;
 using MarketRetailBot.Model;
 using Microsoft.Bot.Builder.Dialogs;
 using Microsoft.Bot.Connector;
-using Newtonsoft.Json.Linq;
-using RestSharp;
 
 //TODO: need refactor
 
 namespace MarketRetailBot.Dialogs
 {
+    //TODO: move to configs
+
+    /// <summary>
+    ///     Main dialog flow
+    /// </summary>
     [Serializable]
     public class SearchAndBuyDialog : IDialog<object>
     {
+        private const string ProductBuyUri = "http://testshop.com/buy/";
+
         protected int count = 1;
 
         public async Task StartAsync(IDialogContext context)
@@ -25,32 +31,37 @@ namespace MarketRetailBot.Dialogs
         public virtual async Task MessageReceivedAsync(IDialogContext context, IAwaitable<IMessageActivity> argument)
         {
             var txt = await argument;
-            /*          if (txt.Text == "/availabilityBySku")
-                      {
 
-                      }*/
 
+            //search availability by SKU
             if (txt.Text.Contains(" /searchBySku"))
             {
-                var sku = txt.Text.Substring((" /searchBySku").Length);
+                var sku = txt.Text.Substring(" /searchBySku".Length);
 
+                var productAvailabilities = await ApiClients.GetProductAvailabilities(sku);
 
+                if (productAvailabilities == null)
+                {
+                    await context.PostAsync($"None availability found.");
+                    return;
+                }
+                string resultingAvailabilityString = $"Look what we've found for sku {sku}:";
 
-                /*  PromptDialog.Text(context, PromptForSearchPhrase,
-                      "Please type title of shoe you would like to search for.", "Didn't get that, try again");*/
+                foreach (var prodAvail in productAvailabilities)
+                    resultingAvailabilityString +=
+                        $"\n<br/> size: {prodAvail.size}, total price: {prodAvail.total_price}, buy: {ProductBuyUri}{prodAvail.nid}";
+                await context.PostAsync(resultingAvailabilityString);
+
                 return;
             }
 
             //start of converstaion or explicit call
             if ((count == 1) || (txt.Text == "/start"))
             {
-                PromptDialog.Text(context, PromptForSearchPhrase,
-                    "Please type title of shoe you would like to search for.", "Didn't get that, try again");
+                PromptForTitle(context);
                 return;
             }
-           
 
-            //    var message = await argument;
             if (txt.Text == "/reset")
                 PromptDialog.Confirm(
                     context,
@@ -63,6 +74,13 @@ namespace MarketRetailBot.Dialogs
         }
 
 
+        private void PromptForTitle(IDialogContext context)
+        {
+            PromptDialog.Text(context, PromptForSearchPhrase,
+                "Please type title of shoe you would like to search for.", "Didn't get that, try again");
+        }
+
+
         private async Task PromptForSearchPhrase(IDialogContext context, IAwaitable<string> result)
         {
             try
@@ -70,46 +88,41 @@ namespace MarketRetailBot.Dialogs
                 var message = context.MakeMessage();
 
                 var searchString = await result;
-                var client = new RestClient("https://kixify-util-services.azurewebsites.net/api/");
-                var request = new RestRequest("product/getbytitle", Method.POST);
-                request.AddHeader("Authorization", "Basic dXRpbHNlcnZpY2U6dXRpbGF1dGg3Nzc =");
-                request.AddObject(new {Title = searchString});
-                var resStr = client.Execute(request).Content;
-
-                var products = DeserializeAndUnwrap<List<Product>>(resStr, "Data");
+                var resStr = ApiClients.GetProducts(searchString);
+                var products = SerializationHelper.DeserializeAndUnwrap<List<Product>>(resStr);
                 if (products == null)
                 {
                     await context.PostAsync($"Nothing found.");
+                    PromptForTitle(context);
                     return;
                 }
-
 
                 await context.PostAsync($"We've found {products.Count} results for \"{searchString}\"");
 
                 //Filling up thumbnail cards for representation
                 //buttons not working for now
-                
-                //trim
-                if (products.Count > 25) products.RemoveRange(25, products.Count - 25);
+
+                //trim products for 8 for now
+                if (products.Count > 8) products.RemoveRange(8, products.Count - 8);
 
                 var cards = new List<HeroCard>();
                 products.ForEach(product =>
                 {
-                    CardAction plButton = new CardAction()
+                    var plButton = new CardAction
                     {
-                        Value = string.Format(" /searchBySku {0}", product.Sku),
+                        Value = $" /searchBySku {product.Sku}",
                         Type = "imBack",
                         Title = "Show availability"
                     };
-                    var buttons = new List<CardAction>() { plButton };
+                    var buttons = new List<CardAction> {plButton};
 
                     cards.Add(new HeroCard
                     {
                         Title = product.Title,
-                          Buttons = buttons,
+                        Buttons = buttons,
                         Images = new List<CardImage> {new CardImage(product.MainImageUrl)},
-                        Subtitle = product.ColorWay,
-                      //  Tap = new CardAction() { }
+                        Subtitle = product.ColorWay
+                        //  Tap = new CardAction() { }
                     });
                 });
                 message.AttachmentLayout = AttachmentLayoutTypes.Carousel;
@@ -124,18 +137,6 @@ namespace MarketRetailBot.Dialogs
             }
         }
 
-        /// <summary>
-        ///     Deserialising json string and unwrapping only part with needed node
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="json"></param>
-        /// <param name="nameOfNode"></param>
-        /// <returns></returns>
-        public static T DeserializeAndUnwrap<T>(string json, string nameOfNode)
-        {
-            var jo = JObject.Parse(json);
-            return jo.Properties().First(property => property.Name == nameOfNode).Value.ToObject<T>();
-        }
 
         public async Task AfterResetAsync(IDialogContext context, IAwaitable<bool> argument)
         {
